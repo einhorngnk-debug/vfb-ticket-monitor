@@ -26,11 +26,14 @@ function normalize(value) {
   return clean(value).toLocaleLowerCase("de-DE");
 }
 
-async function firstVisible(page, selectors) {
+async function firstVisible(page, selectors, timeout = 2500) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
-    if (await locator.isVisible().catch(() => false)) {
+    try {
+      await locator.waitFor({ state: "visible", timeout });
       return locator;
+    } catch {
+      // Nächsten Selektor versuchen.
     }
   }
   return null;
@@ -53,7 +56,7 @@ async function fillFirstVisible(page, selectors, value, description) {
 }
 
 async function dismissConsent(page) {
-  const candidates = [
+  const selectors = [
     'button:has-text("Alle akzeptieren")',
     'button:has-text("Akzeptieren")',
     'button:has-text("Zustimmen")',
@@ -61,11 +64,64 @@ async function dismissConsent(page) {
     '[aria-label*="akzeptieren" i]',
   ];
 
-  const button = await firstVisible(page, candidates);
+  const button = await firstVisible(page, selectors, 1200);
   if (button) {
     await button.click().catch(() => {});
     await page.waitForTimeout(500);
   }
+}
+
+async function isAlreadyLoggedIn(page) {
+  const logoutOrAccount = await firstVisible(
+    page,
+    [
+      'text=/Abmelden/i',
+      'text=/Mein Konto/i',
+      'text=/Meine Tickets/i',
+      'text=/Profil/i',
+    ],
+    1200
+  );
+
+  if (logoutOrAccount) {
+    return true;
+  }
+
+  const loginLink = await firstVisible(
+    page,
+    [
+      'a:has-text("Anmelden")',
+      'button:has-text("Anmelden")',
+      'a:has-text("Login")',
+      'button:has-text("Login")',
+    ],
+    1200
+  );
+
+  return !loginLink;
+}
+
+async function openLogin(page) {
+  const loginEntry = await firstVisible(page, [
+    'a:has-text("Anmelden")',
+    'button:has-text("Anmelden")',
+    'a:has-text("Login")',
+    'button:has-text("Login")',
+    'a[href*="login" i]',
+    'a[href*="signin" i]',
+    'a[href*="account" i]',
+    '[aria-label*="anmelden" i]',
+    '[aria-label*="login" i]',
+  ]);
+
+  if (!loginEntry) {
+    throw new Error('Link oder Button "Anmelden" wurde nicht gefunden.');
+  }
+
+  await loginEntry.click();
+  await page.waitForLoadState("domcontentloaded").catch(() => {});
+  await page.waitForTimeout(1200);
+  await dismissConsent(page);
 }
 
 async function login(page) {
@@ -76,36 +132,13 @@ async function login(page) {
 
   await dismissConsent(page);
 
-  // Manche Shopseiten zeigen den Login direkt, andere erst über "Anmelden",
-  // "Login", "Mein Konto" oder das Benutzer-Symbol.
-  const usernameAlreadyVisible = await firstVisible(page, [
-    'input[type="email"]',
-    'input[name*="email" i]',
-    'input[name*="user" i]',
-    'input[autocomplete="username"]',
-  ]);
-
-  if (!usernameAlreadyVisible) {
-    const loginEntry = await firstVisible(page, [
-      'a:has-text("Anmelden")',
-      'button:has-text("Anmelden")',
-      'a:has-text("Login")',
-      'button:has-text("Login")',
-      'a:has-text("Mein Konto")',
-      'button:has-text("Mein Konto")',
-      'a[href*="login" i]',
-      'a[href*="account" i]',
-      '[aria-label*="anmelden" i]',
-      '[aria-label*="login" i]',
-    ]);
-
-    if (loginEntry) {
-      await loginEntry.click();
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
-      await page.waitForTimeout(1000);
-      await dismissConsent(page);
-    }
+  if (await isAlreadyLoggedIn(page)) {
+    console.log("Bereits eingeloggt – Login wird übersprungen.");
+    return;
   }
+
+  console.log('Nicht eingeloggt – klicke auf "Anmelden".');
+  await openLogin(page);
 
   await fillFirstVisible(
     page,
@@ -147,21 +180,32 @@ async function login(page) {
   );
 
   await page.waitForLoadState("domcontentloaded").catch(() => {});
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1800);
 
-  const passwordStillVisible = await firstVisible(page, [
-    'input[type="password"]',
-    'input[autocomplete="current-password"]',
-  ]);
+  const passwordStillVisible = await firstVisible(
+    page,
+    [
+      'input[type="password"]',
+      'input[autocomplete="current-password"]',
+    ],
+    1200
+  );
 
   if (passwordStillVisible) {
     throw new Error(
       "Login scheint fehlgeschlagen zu sein. Prüfe Zugangsdaten oder ob CAPTCHA/2FA verlangt wird."
     );
   }
+
+  console.log("Login wurde ausgeführt.");
 }
 
 async function openAwayGames(page) {
+  await page.goto(START_URL, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+
   await dismissConsent(page);
 
   const tile = await firstVisible(page, [
@@ -171,6 +215,7 @@ async function openAwayGames(page) {
     'button:has-text("Auswärtsspiele")',
     'a:has-text("Auswärts Spiele")',
     'button:has-text("Auswärts Spiele")',
+    'text=/auswärts\s*spiele/i',
   ]);
 
   if (!tile) {
@@ -250,6 +295,7 @@ try {
   await openAwayGames(page);
 
   const events = await readEvents(page);
+
   if (events.length === 0) {
     throw new Error("Keine Spiele mit .event-link gefunden.");
   }
@@ -269,9 +315,6 @@ try {
     const wasSoldOut = oldNormalized.includes(SOLD_OUT_TEXT);
     const isSoldOut = currentNormalized.includes(SOLD_OUT_TEXT);
 
-    // Beim ersten Lauf wird nur der Ausgangszustand gespeichert.
-    // Eine Mail folgt erst bei einem späteren Wechsel von "ausverkauft"
-    // zu einem anderen Status.
     if (previous[id] && wasSoldOut && !isSoldOut) {
       await sendEmail(title, status, page.url());
       console.log(`E-Mail ausgelöst: ${title}`);
@@ -287,10 +330,18 @@ try {
   await saveState(next);
 } catch (error) {
   console.error(error);
+
   await page.screenshot({
     path: "failure.png",
     fullPage: true,
   }).catch(() => {});
+
+  await fs.writeFile(
+    "failure.html",
+    await page.content().catch(() => ""),
+    "utf8"
+  ).catch(() => {});
+
   throw error;
 } finally {
   await browser.close();

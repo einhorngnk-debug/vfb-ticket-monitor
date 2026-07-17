@@ -1,33 +1,37 @@
-# VfB Ticket Monitor
+# VfB Ticket Monitor v2
 
-Dieser Monitor meldet per Google Apps Script, wenn ein Auswärtsspiel zuvor
-"Gästebereich ausverkauft" war und später einen anderen Buttonstatus zeigt.
+Diese Version klickt zuerst auf **Anmelden**, falls der Shop noch nicht eingeloggt ist.
+Danach werden Benutzername und Passwort aus GitHub-Secrets eingetragen und
+anschließend die Kachel **Auswärtsspiele** geöffnet.
 
 ## GitHub-Secrets
 
-Unter `Settings → Secrets and variables → Actions` anlegen:
+Unter `Settings → Secrets and variables → Actions`:
 
-- `VFB_USERNAME` – Login-E-Mail oder Benutzername
-- `VFB_PASSWORD` – Ticketshop-Passwort
-- `EMAIL_ENDPOINT` – Google-Apps-Script-Web-App-URL mit `/exec`
-- `EMAIL_SECRET` – dasselbe Secret wie in `Code.gs`
+- `VFB_USERNAME`
+- `VFB_PASSWORD`
+- `EMAIL_ENDPOINT`
+- `EMAIL_SECRET`
 
-Keine Zugangsdaten in Dateien oder Commits schreiben.
+## Aktualisierung eines bestehenden Repositories
 
-## Installation
+Ersetze mindestens:
 
-Alle Dateien dieses Projekts in das öffentliche GitHub-Repository hochladen.
-Dann unter `Actions → VfB Ticket Monitor → Run workflow` einmal manuell testen.
+- `monitor.js`
+- `.github/workflows/monitor.yml`
+
+Die Dateien `package.json`, `state.json` und `README.md` können ebenfalls ersetzt werden.
+
+## Test
+
+Unter `Actions → VfB Ticket Monitor → Run workflow` manuell starten.
 
 Beim ersten erfolgreichen Lauf wird nur `state.json` initialisiert.
-Eine E-Mail wird erst bei einem späteren Wechsel von
-"Gästebereich ausverkauft" zu einem anderen Status ausgelöst.
+Eine E-Mail kommt erst bei einem späteren Wechsel von
+`Gästebereich ausverkauft` zu einem anderen Status.
+
+Bei einem Fehler werden `failure.png` und `failure.html` als Artifact hochgeladen.
 
 ## Grenzen
 
-Der Code umgeht weder CAPTCHA noch Warteschlange noch Zwei-Faktor-Anmeldung.
-Wenn der Shop eine solche Prüfung verlangt, schlägt der Lauf kontrolliert fehl
-und lädt einen Screenshot als GitHub-Artifact hoch.
-
-Die Selektoren sind absichtlich tolerant. Falls der Loginaufbau anders ist,
-kann `monitor.js` anhand des Fehler-Screenshots angepasst werden.
+CAPTCHA, Warteschlange und Zwei-Faktor-Anmeldung werden nicht umgangen.
