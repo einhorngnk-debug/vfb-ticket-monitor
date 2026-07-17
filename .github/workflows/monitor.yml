@@ -1,0 +1,65 @@
+
+name: VfB Ticket Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vfb-ticket-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm install
+
+      - name: Chromium installieren
+        run: npx playwright install --with-deps chromium
+
+      - name: Ticketstatus prüfen
+        run: npm run monitor
+        env:
+          VFB_USERNAME: ${{ secrets.VFB_USERNAME }}
+          VFB_PASSWORD: ${{ secrets.VFB_PASSWORD }}
+          EMAIL_ENDPOINT: ${{ secrets.EMAIL_ENDPOINT }}
+          EMAIL_SECRET: ${{ secrets.EMAIL_SECRET }}
+
+      - name: Fehler-Screenshot hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vfb-monitor-fehler
+          path: failure.png
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Geänderten Status speichern
+        run: |
+          if git diff --quiet -- state.json; then
+            echo "Kein Statuswechsel zu speichern."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git commit -m "Ticketstatus aktualisieren"
+          git push
