@@ -1,0 +1,12 @@
+{
+  "name": "vfb-ticket-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "monitor": "node monitor.js"
+  },
+  "dependencies": {
+    "playwright": "latest"
+  }
+}
