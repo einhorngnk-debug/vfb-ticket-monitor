@@ -39,6 +39,7 @@ jobs:
           VFB_PASSWORD: ${{ secrets.VFB_PASSWORD }}
           EMAIL_ENDPOINT: ${{ secrets.EMAIL_ENDPOINT }}
           EMAIL_SECRET: ${{ secrets.EMAIL_SECRET }}
+          VFB_STATE_KEY: ${{ secrets.VFB_STATE_KEY }}
 
       - name: Fehlerdateien hochladen
         if: failure()
@@ -51,16 +52,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: Geänderten Status speichern
+      - name: Status und verschlüsselte Sitzung speichern
         if: success()
         run: |
-          if git diff --quiet -- state.json; then
-            echo "Kein Statuswechsel zu speichern."
+          if git diff --quiet -- state.json auth-state.enc; then
+            echo "Keine Änderungen zu speichern."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          git commit -m "Ticketstatus aktualisieren"
+          git add state.json auth-state.enc
+          git commit -m "Ticketstatus und Sitzung aktualisieren"
           git push
