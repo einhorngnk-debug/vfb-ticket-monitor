@@ -1,46 +1,24 @@
-# VfB Ticket Monitor ohne Login
+# VfB Ticket Monitor – Cookie-Fix
 
-Diese Variante versucht, die öffentlich sichtbaren Auswärtsspiele ohne Anmeldung zu prüfen.
+Diese Version prüft die öffentlich sichtbaren Auswärtsspiele ohne Login.
 
-## Benötigte GitHub-Secrets
+Der ConsentManager-Dialog wird nacheinander über folgende Wege geschlossen:
 
-Nur diese beiden Secrets sind erforderlich:
+1. sichtbare Playwright-Locators,
+2. alle Frames,
+3. offene Shadow DOMs,
+4. einen Koordinaten-Fallback für den mittigen roten Hauptbutton.
+
+## Benötigte Secrets
 
 - `EMAIL_ENDPOINT`
 - `EMAIL_SECRET`
 
-Nicht mehr benötigt:
-
-- `VFB_USERNAME`
-- `VFB_PASSWORD`
-- `VFB_STATE_KEY`
-
-Die alten Secrets dürfen bestehen bleiben, werden aber vom Workflow nicht verwendet.
-
 ## Installation
 
-Alle Dateien aus diesem Paket in das Repository hochladen und vorhandene Dateien ersetzen.
+Alle Dateien dieses Pakets in das GitHub-Repository hochladen und vorhandene
+Dateien ersetzen. Danach den Workflow manuell über GitHub Actions starten.
 
-Danach unter:
-
-`Actions → VfB Ticket Monitor ohne Login → Run workflow`
-
-einen manuellen Test starten.
-
-## Verhalten
-
-Der Monitor:
-
-1. öffnet den öffentlichen VfB-Ticketshop,
-2. akzeptiert nach Möglichkeit den Cookie-Dialog,
-3. öffnet „Auswärtsspiele“,
-4. liest öffentlich sichtbare Ticketstatus aus,
-5. speichert den Ausgangszustand in `state.json`,
-6. verschickt eine E-Mail, wenn ein Status von
-   „Gästebereich ausverkauft“ zu einem anderen Status wechselt.
-
-## Wichtiger Hinweis
-
-Diese Version funktioniert nur, wenn der VfB-Shop die relevanten Ticketstatus ohne Login ausliefert.
-
-Wenn der Shop für die Auswärtsspiele zwingend eine Anmeldung verlangt, erzeugt der Workflow eine klare Fehlermeldung und lädt `failure.png` sowie `failure.html` hoch. Ein Login, CAPTCHA oder eine Warteschlange wird nicht umgangen.
+Wenn der Shop die Ticketdaten nur nach Anmeldung ausliefert, meldet der
+Workflow das ausdrücklich. CAPTCHA, Warteschlangen oder Logins werden nicht
+umgangen.
