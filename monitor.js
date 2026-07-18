@@ -198,24 +198,51 @@ async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
   url.searchParams.set("status", `${oldStatus} -> ${newStatus}`);
   url.searchParams.set("pageUrl", pageUrl || PAGE_URL);
 
+  // Zeigt die URL ohne das geheime Kennwort im GitHub-Log.
+  const safeUrl = new URL(url);
+  safeUrl.searchParams.set("secret", "***");
+  console.log(`Apps Script wird aufgerufen: ${safeUrl.toString()}`);
+
   const response = await fetch(url, {
     method: "GET",
     redirect: "follow",
     signal: AbortSignal.timeout(20000),
   });
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
+  const responseBody = await response.text();
 
+  console.log(`Apps-Script-HTTP-Status: ${response.status}`);
+  console.log(`Apps-Script-Antwort: ${responseBody}`);
+
+  if (!response.ok) {
     throw new Error(
-      `E-Mail-Endpunkt antwortete mit HTTP ${response.status}: ${body.slice(
+      `E-Mail-Endpunkt antwortete mit HTTP ${response.status}: ${responseBody.slice(
         0,
         300
       )}`
     );
   }
 
-  console.log(`E-Mail gesendet: ${title}`);
+  let result;
+
+  try {
+    result = JSON.parse(responseBody);
+  } catch {
+    throw new Error(
+      `Apps Script lieferte keine gültige JSON-Antwort: ${responseBody.slice(
+        0,
+        300
+      )}`
+    );
+  }
+
+  if (result.success !== true) {
+    throw new Error(
+      `Apps Script meldete einen Fehler: ${result.message || responseBody}`
+    );
+  }
+
+  console.log(`E-Mail erfolgreich bestätigt: ${title}`);
   return true;
 }
 
