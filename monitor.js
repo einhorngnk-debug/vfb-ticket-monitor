@@ -1,6 +1,10 @@
-const fs = require("fs");
-const path = require("path");
-const { chromium } = require("playwright");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PAGE_URL =
   process.env.PAGE_URL ||
@@ -71,7 +75,7 @@ async function closeCookieDialog(page) {
         return;
       }
     } catch {
-      // Der nächste mögliche Button wird geprüft.
+      // Nächsten möglichen Button prüfen.
     }
   }
 
@@ -95,27 +99,21 @@ async function readEvents(page) {
 
     return cards
       .map((card) => {
-        /*
-         * Die Paarung wird direkt aus den drei dafür vorgesehenen Elementen
-         * aufgebaut. Dadurch wird nicht mehr nur "VfB Stuttgart" erkannt.
-         */
         const home = cleanText(
           card.querySelector(".event-title .text-home")?.textContent
         );
+
         const delimiter =
           cleanText(
             card.querySelector(".event-title .text-delimiter")?.textContent
           ) || "-";
+
         const guest = cleanText(
           card.querySelector(".event-title .text-guest")?.textContent
         );
 
         let title = [home, delimiter, guest].filter(Boolean).join(" ");
 
-        /*
-         * Fallback: strukturierte Event-Daten verwenden, falls sich das
-         * sichtbare HTML später leicht ändert.
-         */
         let structuredData = null;
 
         try {
@@ -142,8 +140,8 @@ async function readEvents(page) {
         }
 
         /*
-         * Der Verkaufsstatus steht im Button der jeweiligen
-         * Veranstaltung. Hinweise wie ÖPNV werden bewusst ignoriert.
+         * Verkaufsstatus ausschließlich aus dem Event-Button lesen.
+         * Andere Kartentexte wie ÖPNV-Hinweise werden dadurch ignoriert.
          */
         const status =
           cleanText(
@@ -153,12 +151,14 @@ async function readEvents(page) {
             card.querySelector(".event-footer .event-button a")?.textContent
           );
 
-        const relativeHref =
-          card.querySelector(".event-footer .event-button a")?.getAttribute(
-            "href"
-          ) || "";
+        const button = card.querySelector(
+          ".event-footer .event-button a"
+        );
 
-        let pageUrl = structuredData?.url || "";
+        const relativeHref = button?.getAttribute("href") || "";
+        const eventId = button?.getAttribute("data-eventid") || "";
+
+        let pageUrl = cleanText(structuredData?.url);
 
         if (!pageUrl && relativeHref) {
           try {
@@ -167,11 +167,6 @@ async function readEvents(page) {
             pageUrl = window.location.href;
           }
         }
-
-        const eventId =
-          card
-            .querySelector(".event-footer .event-button a")
-            ?.getAttribute("data-eventid") || "";
 
         return {
           eventId: cleanText(eventId),
@@ -200,10 +195,7 @@ async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
   const url = new URL(EMAIL_ENDPOINT);
   url.searchParams.set("secret", EMAIL_SECRET);
   url.searchParams.set("eventName", title);
-  url.searchParams.set(
-    "status",
-    `${oldStatus} -> ${newStatus}`
-  );
+  url.searchParams.set("status", `${oldStatus} -> ${newStatus}`);
   url.searchParams.set("pageUrl", pageUrl || PAGE_URL);
 
   const response = await fetch(url, {
@@ -214,6 +206,7 @@ async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+
     throw new Error(
       `E-Mail-Endpunkt antwortete mit HTTP ${response.status}: ${body.slice(
         0,
@@ -227,10 +220,6 @@ async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
 }
 
 function buildStateKey(event) {
-  /*
-   * Die Event-ID bleibt über Statusänderungen hinweg stabil.
-   * Falls sie fehlt, wird die Paarung als Schlüssel verwendet.
-   */
   return event.eventId ? `event-${event.eventId}` : event.title;
 }
 
@@ -252,13 +241,15 @@ async function main() {
 
     await closeCookieDialog(page);
 
-    await page.waitForLoadState("networkidle", {
-      timeout: 15000,
-    }).catch(() => {
-      console.log(
-        "Networkidle nicht erreicht; die bereits geladene Seite wird ausgewertet."
-      );
-    });
+    await page
+      .waitForLoadState("networkidle", {
+        timeout: 15000,
+      })
+      .catch(() => {
+        console.log(
+          "Networkidle nicht erreicht; die bereits geladene Seite wird ausgewertet."
+        );
+      });
 
     const events = await readEvents(page);
 
@@ -281,6 +272,7 @@ async function main() {
     for (const event of events) {
       const key = buildStateKey(event);
       const previous = previousState[key];
+
       const oldStatus =
         typeof previous === "string" ? previous : previous?.status || "";
 
@@ -294,9 +286,9 @@ async function main() {
 
       /*
        * Benachrichtigung nur beim gewünschten Übergang:
-       * vorher "Gästebereich ausverkauft", jetzt ein anderer Status.
+       * vorher ausverkauft, jetzt ein anderer Status.
        *
-       * Beim allerersten Lauf wird lediglich state.json angelegt.
+       * Beim ersten Lauf wird nur state.json angelegt.
        */
       if (
         oldStatus &&
@@ -312,11 +304,6 @@ async function main() {
       }
     }
 
-    /*
-     * Erst speichern, wenn die Seite erfolgreich ausgewertet wurde.
-     * So wird ein bestehender Zustand bei einem Lade-/Parserfehler nicht
-     * versehentlich überschrieben.
-     */
     saveState(nextState);
     console.log("state.json aktualisiert.");
 
