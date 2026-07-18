@@ -1,10 +1,10 @@
 name: VfB Ticket Monitor ohne Login
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/25 * * * *"
-
+    - cron: "7,32,57 * * * *"
+  workflow_dispatch:
+  
 permissions:
   contents: write
 
