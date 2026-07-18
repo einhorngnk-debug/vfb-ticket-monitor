@@ -220,7 +220,7 @@ async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
 }
 
 function buildStateKey(event) {
-  return event.eventId ? `event-${event.eventId}` : event.title;
+  return event.title;
 }
 
 async function main() {
