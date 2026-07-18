@@ -13,16 +13,18 @@ for (const name of ["EMAIL_ENDPOINT", "EMAIL_SECRET"]) {
   }
 }
 
-const clean = (value) =>
-  String(value ?? "").replace(/\s+/g, " ").trim();
+function clean(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
 
-const normalize = (value) =>
-  clean(value).toLocaleLowerCase("de-DE");
+function normalize(value) {
+  return clean(value).toLocaleLowerCase("de-DE");
+}
 
 async function closeCookieDialog(page) {
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(1500);
 
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  for (let attempt = 1; attempt <= 8; attempt++) {
     for (const frame of page.frames()) {
       const candidates = [
         frame.getByRole("button", { name: /alle akzeptieren/i }).first(),
@@ -36,53 +38,16 @@ async function closeCookieDialog(page) {
         try {
           if (await candidate.isVisible({ timeout: 350 })) {
             await candidate.click({ force: true, timeout: 2500 });
-            await page.waitForTimeout(800);
+            await page.waitForTimeout(700);
             return;
           }
         } catch {
-          // Weiter versuchen.
+          // nächsten Kandidaten probieren
         }
       }
     }
 
-    const clickedShadow = await page.evaluate(() => {
-      const wanted = /^(alle akzeptieren|ablehnen)$/i;
-
-      function walk(root) {
-        for (const element of root.querySelectorAll("*")) {
-          const text = (element.textContent || "")
-            .replace(/\s+/g, " ")
-            .trim();
-          const label = (element.getAttribute?.("aria-label") || "").trim();
-          const value = (element.getAttribute?.("value") || "").trim();
-          const clickable =
-            ["BUTTON", "A", "INPUT"].includes(element.tagName) ||
-            element.getAttribute?.("role") === "button";
-
-          if (
-            clickable &&
-            (wanted.test(text) || wanted.test(label) || wanted.test(value))
-          ) {
-            element.click();
-            return true;
-          }
-
-          if (element.shadowRoot && walk(element.shadowRoot)) {
-            return true;
-          }
-        }
-        return false;
-      }
-
-      return walk(document);
-    }).catch(() => false);
-
-    if (clickedShadow) {
-      await page.waitForTimeout(800);
-      return;
-    }
-
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(450);
   }
 
   const consentVisible = await page
@@ -98,7 +63,7 @@ async function closeCookieDialog(page) {
         Math.round(viewport.width * 0.5),
         Math.round(viewport.height * 0.525)
       );
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(900);
     }
   }
 }
@@ -110,24 +75,13 @@ async function openTicketPage(page) {
   });
 
   await closeCookieDialog(page);
-
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1200);
 
   const pageText = normalize(await page.locator("body").innerText());
 
   if (!pageText.includes("veranstaltungen")) {
     throw new Error("Die Veranstaltungsseite wurde nicht korrekt geladen.");
-  }
-
-  if (
-    !pageText.includes("gästebereich") &&
-    !pageText.includes("mitglieder:") &&
-    !pageText.includes("vfb stuttgart")
-  ) {
-    throw new Error(
-      "Auf der direkten Ticketseite wurden keine Auswärtsspiel-Informationen gefunden."
-    );
   }
 }
 
@@ -136,79 +90,84 @@ async function readEvents(page) {
     const clean = (value) =>
       String(value ?? "").replace(/\s+/g, " ").trim();
 
+    const datePattern = /\b\d{1,2}\.\d{1,2}\.\d{4}\b/;
     const result = [];
     const seen = new Set();
 
-    const statusNodes = [...document.querySelectorAll("a, button")].filter((el) => {
-      const text = clean(el.textContent).toLocaleLowerCase("de-DE");
-      return (
-        text.includes("gästebereich") ||
-        text.startsWith("mitglieder:") ||
-        text.includes("verkaufsstart") ||
-        text.includes("ticket")
-      );
-    });
+    // Nur Blöcke berücksichtigen, die tatsächlich eine Spielkarte darstellen:
+    // - enthalten "VfB Stuttgart"
+    // - enthalten ein Datum
+    // - enthalten genau einen roten Status-/Aktionsbereich am Kartenende
+    const allElements = [...document.querySelectorAll("div, article, li, section")];
 
-    for (const [index, statusNode] of statusNodes.entries()) {
-      let root =
-        statusNode.closest("[data-performanceid]") ||
-        statusNode.closest(".event") ||
-        statusNode.closest("article") ||
-        statusNode.closest("li") ||
-        statusNode.parentElement;
+    for (const element of allElements) {
+      const text = clean(element.innerText);
 
-      // Nach oben laufen, bis ein Block mit Gegner und Datum gefunden wird.
-      let probe = root;
-      for (let i = 0; i < 6 && probe; i++, probe = probe.parentElement) {
-        const text = clean(probe.innerText);
-        if (
-          text.includes("VfB Stuttgart") &&
-          /\d{1,2}\.\d{1,2}\.\d{4}/.test(text)
-        ) {
-          root = probe;
-          break;
-        }
-      }
+      if (!text.includes("VfB Stuttgart")) continue;
+      if (!datePattern.test(text)) continue;
 
-      const blockText = clean(root?.innerText);
-      const lines = blockText
+      const childrenWithSamePattern = [...element.children].filter((child) => {
+        const childText = clean(child.innerText);
+        return childText.includes("VfB Stuttgart") && datePattern.test(childText);
+      });
+
+      // Nur den kleinsten passenden Karten-Container nehmen.
+      if (childrenWithSamePattern.length > 0) continue;
+
+      const interactive = [...element.querySelectorAll("a, button")];
+
+      const statusNode = interactive.find((node) => {
+        const statusText = clean(node.textContent);
+        const lower = statusText.toLocaleLowerCase("de-DE");
+
+        if (!statusText) return false;
+        if (lower === "tickets") return false;
+        if (lower.includes("vip-ticket-shop")) return false;
+        if (lower.includes("startseite")) return false;
+        if (lower.includes("anmelden")) return false;
+
+        return (
+          lower.includes("gästebereich") ||
+          lower.startsWith("mitglieder:") ||
+          lower.includes("verkaufsstart") ||
+          lower.includes("jetzt kaufen") ||
+          lower.includes("nicht verfügbar") ||
+          lower.includes("ausverkauft")
+        );
+      });
+
+      if (!statusNode) continue;
+
+      const heading =
+        element.querySelector("h1, h2, h3, h4, h5, h6")?.textContent || "";
+
+      const lines = element.innerText
         .split(/\n+/)
         .map(clean)
         .filter(Boolean);
 
-      let title =
-        root?.querySelector(".event-title")?.textContent ||
-        root?.querySelector("h1, h2, h3, h4")?.textContent ||
-        "";
+      let title = clean(heading);
 
-      title = clean(title);
-
-      if (!title) {
-        const opponentLines = lines.filter(
-          (line) =>
-            line !== "VfB Stuttgart" &&
-            !line.includes("Gästebereich") &&
-            !line.startsWith("Mitglieder:") &&
-            !/\d{1,2}\.\d{1,2}\.\d{4}/.test(line) &&
-            !line.includes("Bundesliga") &&
-            !line.includes("DFB-Pokal") &&
-            line.length > 3 &&
-            line.length < 100
-        );
-
-        title = opponentLines[0]
-          ? `${opponentLines[0]} - VfB Stuttgart`
-          : `Auswärtsspiel ${index + 1}`;
+      if (!title || !title.includes("VfB Stuttgart")) {
+        const vfbLine = lines.find((line) => line.includes("VfB Stuttgart"));
+        if (vfbLine) {
+          title = vfbLine;
+        }
       }
 
-      const status = clean(statusNode.textContent);
-      const id =
-        statusNode.getAttribute("data-performanceid") ||
-        root?.getAttribute?.("data-performanceid") ||
-        statusNode.getAttribute("href") ||
-        `${title}-${index}`;
+      if (!title) continue;
 
-      if (!status || seen.has(id)) continue;
+      const status = clean(statusNode.textContent);
+
+      const idSource =
+        statusNode.getAttribute("data-performanceid") ||
+        element.getAttribute("data-performanceid") ||
+        element.querySelector("[data-performanceid]")?.getAttribute("data-performanceid") ||
+        title;
+
+      const id = clean(idSource);
+
+      if (!id || seen.has(id)) continue;
       seen.add(id);
 
       result.push({ id, title, status });
@@ -268,7 +227,7 @@ try {
   const events = await readEvents(page);
 
   if (events.length === 0) {
-    throw new Error("Keine Ticketstatus auf der direkten Ticketseite gefunden.");
+    throw new Error("Keine echten Veranstaltungskarten mit Ticketstatus gefunden.");
   }
 
   const previous = await loadState();
