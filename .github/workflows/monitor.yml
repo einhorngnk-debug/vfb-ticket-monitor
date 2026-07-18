@@ -1,4 +1,4 @@
-name: VfB Ticket Monitor
+name: VfB Ticket Monitor ohne Login
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: vfb-ticket-monitor
+  group: vfb-ticket-monitor-ohne-login
   cancel-in-progress: false
 
 jobs:
@@ -32,14 +32,11 @@ jobs:
       - name: Chromium installieren
         run: npx playwright install --with-deps chromium
 
-      - name: Ticketstatus prüfen
+      - name: Öffentliche Ticketstatus prüfen
         run: npm run monitor
         env:
-          VFB_USERNAME: ${{ secrets.VFB_USERNAME }}
-          VFB_PASSWORD: ${{ secrets.VFB_PASSWORD }}
           EMAIL_ENDPOINT: ${{ secrets.EMAIL_ENDPOINT }}
           EMAIL_SECRET: ${{ secrets.EMAIL_SECRET }}
-          VFB_STATE_KEY: ${{ secrets.VFB_STATE_KEY }}
 
       - name: Fehlerdateien hochladen
         if: failure()
@@ -52,16 +49,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: Status und verschlüsselte Sitzung speichern
+      - name: Status speichern
         if: success()
         run: |
-          if git diff --quiet -- state.json auth-state.enc; then
+          if git diff --quiet -- state.json; then
             echo "Keine Änderungen zu speichern."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json auth-state.enc
-          git commit -m "Ticketstatus und Sitzung aktualisieren"
+          git add state.json
+          git commit -m "Ticketstatus aktualisieren"
           git push
