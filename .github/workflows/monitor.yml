@@ -32,7 +32,7 @@ jobs:
       - name: Chromium installieren
         run: npx playwright install --with-deps chromium
 
-      - name: Öffentliche Ticketstatus prüfen
+      - name: Direkte Ticketseite prüfen
         run: npm run monitor
         env:
           EMAIL_ENDPOINT: ${{ secrets.EMAIL_ENDPOINT }}
