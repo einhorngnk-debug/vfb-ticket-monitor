@@ -22,7 +22,7 @@ function normalize(value) {
 }
 
 async function closeCookieDialog(page) {
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1400);
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     for (const frame of page.frames()) {
@@ -76,105 +76,119 @@ async function openTicketPage(page) {
 
   await closeCookieDialog(page);
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-  await page.waitForTimeout(1200);
 
-  const pageText = normalize(await page.locator("body").innerText());
+  await page.locator(".events .event-container").first().waitFor({
+    state: "visible",
+    timeout: 20_000,
+  });
 
-  if (!pageText.includes("veranstaltungen")) {
-    throw new Error("Die Veranstaltungsseite wurde nicht korrekt geladen.");
+  const count = await page.locator(".events .event-container").count();
+
+  if (count === 0) {
+    throw new Error("Keine Veranstaltungskarten gefunden.");
   }
+
+  console.log(`${count} Veranstaltungskarte(n) gefunden.`);
 }
 
 async function readEvents(page) {
-  return page.evaluate(() => {
-    const clean = (value) =>
-      String(value ?? "").replace(/\s+/g, " ").trim();
+  const cards = page.locator(".events .event-container");
+  const count = await cards.count();
+  const events = [];
 
-    const datePattern = /\b\d{1,2}\.\d{1,2}\.\d{4}\b/;
-    const result = [];
-    const seen = new Set();
+  for (let index = 0; index < count; index++) {
+    const card = cards.nth(index);
 
-    // Nur Blöcke berücksichtigen, die tatsächlich eine Spielkarte darstellen:
-    // - enthalten "VfB Stuttgart"
-    // - enthalten ein Datum
-    // - enthalten genau einen roten Status-/Aktionsbereich am Kartenende
-    const allElements = [...document.querySelectorAll("div, article, li, section")];
+    const data = await card.evaluate((element, cardIndex) => {
+      const clean = (value) =>
+        String(value ?? "").replace(/\s+/g, " ").trim();
 
-    for (const element of allElements) {
-      const text = clean(element.innerText);
-
-      if (!text.includes("VfB Stuttgart")) continue;
-      if (!datePattern.test(text)) continue;
-
-      const childrenWithSamePattern = [...element.children].filter((child) => {
-        const childText = clean(child.innerText);
-        return childText.includes("VfB Stuttgart") && datePattern.test(childText);
-      });
-
-      // Nur den kleinsten passenden Karten-Container nehmen.
-      if (childrenWithSamePattern.length > 0) continue;
-
-      const interactive = [...element.querySelectorAll("a, button")];
-
-      const statusNode = interactive.find((node) => {
-        const statusText = clean(node.textContent);
-        const lower = statusText.toLocaleLowerCase("de-DE");
-
-        if (!statusText) return false;
-        if (lower === "tickets") return false;
-        if (lower.includes("vip-ticket-shop")) return false;
-        if (lower.includes("startseite")) return false;
-        if (lower.includes("anmelden")) return false;
-
-        return (
-          lower.includes("gästebereich") ||
-          lower.startsWith("mitglieder:") ||
-          lower.includes("verkaufsstart") ||
-          lower.includes("jetzt kaufen") ||
-          lower.includes("nicht verfügbar") ||
-          lower.includes("ausverkauft")
-        );
-      });
-
-      if (!statusNode) continue;
-
-      const heading =
-        element.querySelector("h1, h2, h3, h4, h5, h6")?.textContent || "";
-
-      const lines = element.innerText
+      const lines = (element.innerText || "")
         .split(/\n+/)
         .map(clean)
         .filter(Boolean);
 
-      let title = clean(heading);
+      const titleLineIndex = lines.findIndex((line) =>
+        line.includes("VfB Stuttgart")
+      );
 
-      if (!title || !title.includes("VfB Stuttgart")) {
-        const vfbLine = lines.find((line) => line.includes("VfB Stuttgart"));
-        if (vfbLine) {
-          title = vfbLine;
+      let title = "";
+
+      if (titleLineIndex >= 0) {
+        const current = lines[titleLineIndex];
+
+        if (current.includes(" - ") || current.startsWith("VfB Stuttgart")) {
+          title = current;
+        } else if (titleLineIndex > 0) {
+          title = `${lines[titleLineIndex - 1]} ${current}`;
+        } else {
+          title = current;
         }
       }
 
-      if (!title) continue;
+      title = clean(title);
 
-      const status = clean(statusNode.textContent);
+      const statusCandidates = [...element.querySelectorAll("a, button, [role='button']")]
+        .map((node) => clean(node.textContent))
+        .filter(Boolean)
+        .filter((text) => {
+          const lower = text.toLocaleLowerCase("de-DE");
 
-      const idSource =
-        statusNode.getAttribute("data-performanceid") ||
+          return (
+            lower.includes("gästebereich") ||
+            lower.startsWith("mitglieder:") ||
+            lower.includes("verkaufsstart") ||
+            lower.includes("jetzt kaufen") ||
+            lower.includes("ausverkauft") ||
+            lower.includes("nicht verfügbar")
+          );
+        });
+
+      const status =
+        statusCandidates.at(-1) ||
+        lines.find((line) => {
+          const lower = line.toLocaleLowerCase("de-DE");
+
+          return (
+            lower.includes("gästebereich") ||
+            lower.startsWith("mitglieder:") ||
+            lower.includes("verkaufsstart") ||
+            lower.includes("jetzt kaufen") ||
+            lower.includes("ausverkauft") ||
+            lower.includes("nicht verfügbar")
+          );
+        }) ||
+        "";
+
+      const id =
         element.getAttribute("data-performanceid") ||
         element.querySelector("[data-performanceid]")?.getAttribute("data-performanceid") ||
-        title;
+        element.getAttribute("data-eventid") ||
+        element.querySelector("[data-eventid]")?.getAttribute("data-eventid") ||
+        title ||
+        `event-${cardIndex + 1}`;
 
-      const id = clean(idSource);
+      return {
+        id: clean(id),
+        title,
+        status: clean(status),
+      };
+    }, index);
 
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-
-      result.push({ id, title, status });
+    if (!data.title) {
+      console.warn(`Karte ${index + 1} ohne Spieltitel übersprungen.`);
+      continue;
     }
 
-    return result;
-  });
+    if (!data.status) {
+      console.warn(`Karte ${index + 1} ohne Ticketstatus übersprungen: ${data.title}`);
+      continue;
+    }
+
+    events.push(data);
+  }
+
+  return events;
 }
 
 async function loadState() {
@@ -213,6 +227,7 @@ async function sendEmail(eventName, status, pageUrl) {
 }
 
 const browser = await chromium.launch({ headless: true });
+
 const context = await browser.newContext({
   locale: "de-DE",
   timezoneId: "Europe/Berlin",
@@ -227,7 +242,7 @@ try {
   const events = await readEvents(page);
 
   if (events.length === 0) {
-    throw new Error("Keine echten Veranstaltungskarten mit Ticketstatus gefunden.");
+    throw new Error("Keine Veranstaltungskarten mit Ticketstatus ausgelesen.");
   }
 
   const previous = await loadState();

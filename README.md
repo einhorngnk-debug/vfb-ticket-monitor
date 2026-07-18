@@ -1,19 +1,13 @@
-# VfB Ticket Monitor – bereinigter Parser
+# VfB Ticket Monitor – `.event-container`
 
-Diese Version öffnet direkt die öffentliche Auswärtsspiel-Seite und wertet
-nur echte Veranstaltungskarten aus.
+Diese Version verwendet den tatsächlichen Karten-Selektor der Seite:
 
-Nicht mehr als Ticketstatus erfasst werden:
+```text
+.events .event-container
+```
 
-- `Tickets`
-- `VIP-Ticket-Shop`
-- Navigationselemente
-
-Im Log sollten nur echte Spiele erscheinen, zum Beispiel:
-
-- F.C. Hansa Rostock - VfB Stuttgart
-- FC Bayern München - VfB Stuttgart
-- TSG Hoffenheim - VfB Stuttgart
+Dadurch werden nur die echten Veranstaltungskarten ausgewertet. Navigation,
+„Ticket kaufen“, „Ticket Onlineshops“ und „VIP-Ticket-Shop“ werden ignoriert.
 
 ## Benötigte GitHub-Secrets
 
@@ -22,5 +16,13 @@ Im Log sollten nur echte Spiele erscheinen, zum Beispiel:
 
 ## Installation
 
-Alle Dateien in das bestehende Repository hochladen und die vorhandenen
+Alle Dateien in das vorhandene Repository hochladen und die bisherigen
 Dateien ersetzen. Danach den Workflow manuell starten.
+
+Im Log sollte zuerst zum Beispiel stehen:
+
+```text
+3 Veranstaltungskarte(n) gefunden.
+```
+
+Danach sollten nur die echten Spiele mit ihrem Status erscheinen.
