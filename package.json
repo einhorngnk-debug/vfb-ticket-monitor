@@ -1,6 +1,6 @@
 {
-  "name": "vfb-ticket-monitor",
-  "version": "3.0.0",
+  "name": "vfb-ticket-monitor-ohne-login",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,43 +1,46 @@
-# VfB Ticket Monitor v3
+# VfB Ticket Monitor ohne Login
 
-Diese Version:
+Diese Variante versucht, die öffentlich sichtbaren Auswärtsspiele ohne Anmeldung zu prüfen.
 
-- akzeptiert den Cookie-/Datenschutzdialog auch dann, wenn er verzögert erscheint,
-- meldet sich bei Bedarf an,
-- speichert die Browser-Sitzung verschlüsselt,
-- verwendet die gespeicherte Sitzung bei späteren Läufen,
-- überwacht alle sichtbaren Auswärtsspiele.
+## Benötigte GitHub-Secrets
 
-## GitHub-Secrets
+Nur diese beiden Secrets sind erforderlich:
 
-Unter `Settings → Secrets and variables → Actions` müssen fünf Secrets existieren:
+- `EMAIL_ENDPOINT`
+- `EMAIL_SECRET`
+
+Nicht mehr benötigt:
 
 - `VFB_USERNAME`
 - `VFB_PASSWORD`
-- `EMAIL_ENDPOINT`
-- `EMAIL_SECRET`
 - `VFB_STATE_KEY`
 
-`VFB_STATE_KEY` ist ein neuer, langer Schlüssel zur Verschlüsselung der Sitzung,
-zum Beispiel mindestens 32 zufällige Zeichen. Nicht dasselbe Passwort wie beim VfB verwenden.
+Die alten Secrets dürfen bestehen bleiben, werden aber vom Workflow nicht verwendet.
 
-## Aktualisierung
+## Installation
 
-Ersetze alle Projektdateien durch die Dateien aus diesem Paket.
-Die Datei `auth-state.enc` darf leer starten. Nach dem ersten erfolgreichen Login
-wird sie verschlüsselt befüllt und automatisch committed.
+Alle Dateien aus diesem Paket in das Repository hochladen und vorhandene Dateien ersetzen.
 
-## Test
+Danach unter:
 
-Unter `Actions → VfB Ticket Monitor → Run workflow` starten.
+`Actions → VfB Ticket Monitor ohne Login → Run workflow`
 
-Beim ersten erfolgreichen Lauf wird der Ausgangszustand gespeichert.
-Eine Ticket-Mail wird erst bei einem späteren Wechsel von
-`Gästebereich ausverkauft` zu einem anderen Status ausgelöst.
+einen manuellen Test starten.
 
-## Sicherheit
+## Verhalten
 
-Die Sitzung wird mit AES-256-GCM verschlüsselt. Der Schlüssel liegt nur als
-GitHub Secret vor. Ohne `VFB_STATE_KEY` ist `auth-state.enc` nicht lesbar.
+Der Monitor:
 
-CAPTCHA, Warteschlange oder Zwei-Faktor-Anmeldung werden nicht umgangen.
+1. öffnet den öffentlichen VfB-Ticketshop,
+2. akzeptiert nach Möglichkeit den Cookie-Dialog,
+3. öffnet „Auswärtsspiele“,
+4. liest öffentlich sichtbare Ticketstatus aus,
+5. speichert den Ausgangszustand in `state.json`,
+6. verschickt eine E-Mail, wenn ein Status von
+   „Gästebereich ausverkauft“ zu einem anderen Status wechselt.
+
+## Wichtiger Hinweis
+
+Diese Version funktioniert nur, wenn der VfB-Shop die relevanten Ticketstatus ohne Login ausliefert.
+
+Wenn der Shop für die Auswärtsspiele zwingend eine Anmeldung verlangt, erzeugt der Workflow eine klare Fehlermeldung und lädt `failure.png` sowie `failure.html` hoch. Ein Login, CAPTCHA oder eine Warteschlange wird nicht umgangen.
