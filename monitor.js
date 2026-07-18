@@ -1,294 +1,342 @@
-import { chromium } from "playwright";
-import fs from "node:fs/promises";
+const fs = require("fs");
+const path = require("path");
+const { chromium } = require("playwright");
 
-const TICKET_URL =
+const PAGE_URL =
+  process.env.PAGE_URL ||
   "https://tickets.vfb.de/shop?wes=empty_session_103&language=1&shopid=103&nextstate=2&lpShortcutId=4";
 
-const STATE_FILE = "state.json";
-const SOLD_OUT_TEXT = "gästebereich ausverkauft";
+const EMAIL_ENDPOINT = process.env.EMAIL_ENDPOINT || "";
+const EMAIL_SECRET = process.env.EMAIL_SECRET || "";
 
-for (const name of ["EMAIL_ENDPOINT", "EMAIL_SECRET"]) {
-  if (!process.env[name]) {
-    throw new Error(`GitHub Secret ${name} fehlt.`);
-  }
-}
+const STATE_FILE = path.join(__dirname, "state.json");
+const SOLD_OUT_TEXT = "Gästebereich ausverkauft";
 
 function clean(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function normalize(value) {
-  return clean(value).toLocaleLowerCase("de-DE");
+function normalizeStatus(value) {
+  return clean(value).replace(/\s*!+\s*$/, "");
 }
 
-async function closeCookieDialog(page) {
-  await page.waitForTimeout(1400);
+function isSoldOut(status) {
+  return normalizeStatus(status)
+    .toLocaleLowerCase("de-DE")
+    .includes(SOLD_OUT_TEXT.toLocaleLowerCase("de-DE"));
+}
 
-  for (let attempt = 1; attempt <= 8; attempt++) {
-    for (const frame of page.frames()) {
-      const candidates = [
-        frame.getByRole("button", { name: /alle akzeptieren/i }).first(),
-        frame.getByText(/alle akzeptieren/i, { exact: true }).first(),
-        frame.locator('button:has-text("Alle akzeptieren")').first(),
-        frame.locator('[aria-label*="Alle akzeptieren" i]').first(),
-        frame.getByRole("button", { name: /ablehnen/i }).first(),
-      ];
-
-      for (const candidate of candidates) {
-        try {
-          if (await candidate.isVisible({ timeout: 350 })) {
-            await candidate.click({ force: true, timeout: 2500 });
-            await page.waitForTimeout(700);
-            return;
-          }
-        } catch {
-          // nächsten Kandidaten probieren
-        }
-      }
-    }
-
-    await page.waitForTimeout(450);
+function loadState() {
+  if (!fs.existsSync(STATE_FILE)) {
+    return {};
   }
 
-  const consentVisible = await page
-    .getByText(/Privatsphäre-Einstellungen/i)
-    .first()
-    .isVisible({ timeout: 500 })
-    .catch(() => false);
-
-  if (consentVisible) {
-    const viewport = page.viewportSize();
-    if (viewport) {
-      await page.mouse.click(
-        Math.round(viewport.width * 0.5),
-        Math.round(viewport.height * 0.525)
-      );
-      await page.waitForTimeout(900);
-    }
-  }
-}
-
-async function openTicketPage(page) {
-  await page.goto(TICKET_URL, {
-    waitUntil: "domcontentloaded",
-    timeout: 60_000,
-  });
-
-  await closeCookieDialog(page);
-  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-
-  await page.locator(".events .event-container").first().waitFor({
-    state: "visible",
-    timeout: 20_000,
-  });
-
-  const count = await page.locator(".events .event-container").count();
-
-  if (count === 0) {
-    throw new Error("Keine Veranstaltungskarten gefunden.");
-  }
-
-  console.log(`${count} Veranstaltungskarte(n) gefunden.`);
-}
-
-async function readEvents(page) {
-  const cards = page.locator(".events .event-container");
-  const count = await cards.count();
-  const events = [];
-
-  for (let index = 0; index < count; index++) {
-    const card = cards.nth(index);
-
-    const data = await card.evaluate((element, cardIndex) => {
-      const clean = (value) =>
-        String(value ?? "").replace(/\s+/g, " ").trim();
-
-      const lines = (element.innerText || "")
-        .split(/\n+/)
-        .map(clean)
-        .filter(Boolean);
-
-      const titleLineIndex = lines.findIndex((line) =>
-        line.includes("VfB Stuttgart")
-      );
-
-      let title = "";
-
-      if (titleLineIndex >= 0) {
-        const current = lines[titleLineIndex];
-
-        if (current.includes(" - ") || current.startsWith("VfB Stuttgart")) {
-          title = current;
-        } else if (titleLineIndex > 0) {
-          title = `${lines[titleLineIndex - 1]} ${current}`;
-        } else {
-          title = current;
-        }
-      }
-
-      title = clean(title);
-
-      const statusCandidates = [...element.querySelectorAll("a, button, [role='button']")]
-        .map((node) => clean(node.textContent))
-        .filter(Boolean)
-        .filter((text) => {
-          const lower = text.toLocaleLowerCase("de-DE");
-
-          return (
-            lower.includes("gästebereich") ||
-            lower.startsWith("mitglieder:") ||
-            lower.includes("verkaufsstart") ||
-            lower.includes("jetzt kaufen") ||
-            lower.includes("ausverkauft") ||
-            lower.includes("nicht verfügbar")
-          );
-        });
-
-      const status =
-        statusCandidates.at(-1) ||
-        lines.find((line) => {
-          const lower = line.toLocaleLowerCase("de-DE");
-
-          return (
-            lower.includes("gästebereich") ||
-            lower.startsWith("mitglieder:") ||
-            lower.includes("verkaufsstart") ||
-            lower.includes("jetzt kaufen") ||
-            lower.includes("ausverkauft") ||
-            lower.includes("nicht verfügbar")
-          );
-        }) ||
-        "";
-
-      const id =
-        element.getAttribute("data-performanceid") ||
-        element.querySelector("[data-performanceid]")?.getAttribute("data-performanceid") ||
-        element.getAttribute("data-eventid") ||
-        element.querySelector("[data-eventid]")?.getAttribute("data-eventid") ||
-        title ||
-        `event-${cardIndex + 1}`;
-
-      return {
-        id: clean(id),
-        title,
-        status: clean(status),
-      };
-    }, index);
-
-    if (!data.title) {
-      console.warn(`Karte ${index + 1} ohne Spieltitel übersprungen.`);
-      continue;
-    }
-
-    if (!data.status) {
-      console.warn(`Karte ${index + 1} ohne Ticketstatus übersprungen: ${data.title}`);
-      continue;
-    }
-
-    events.push(data);
-  }
-
-  return events;
-}
-
-async function loadState() {
   try {
-    return JSON.parse(await fs.readFile(STATE_FILE, "utf8"));
-  } catch {
+    const raw = fs.readFileSync(STATE_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch (error) {
+    console.warn(`state.json konnte nicht gelesen werden: ${error.message}`);
     return {};
   }
 }
 
-async function saveState(state) {
-  await fs.writeFile(
-    STATE_FILE,
-    `${JSON.stringify(state, null, 2)}\n`,
-    "utf8"
-  );
+function saveState(state) {
+  fs.writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-async function sendEmail(eventName, status, pageUrl) {
-  const response = await fetch(process.env.EMAIL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/plain;charset=utf-8",
-    },
-    body: JSON.stringify({
-      secret: process.env.EMAIL_SECRET,
-      eventName,
-      status,
-      pageUrl,
-    }),
+async function closeCookieDialog(page) {
+  const candidates = [
+    page.getByRole("button", { name: /alle akzeptieren/i }),
+    page.getByRole("button", { name: /akzeptieren/i }),
+    page.getByRole("button", { name: /zustimmen/i }),
+    page.getByRole("button", { name: /einverstanden/i }),
+    page.locator("#onetrust-accept-btn-handler"),
+    page.locator('[data-testid*="accept"]'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const button = candidate.first();
+
+      if (await button.isVisible({ timeout: 1200 })) {
+        await button.click({ timeout: 3000 });
+        console.log("Cookie-Dialog geschlossen.");
+        return;
+      }
+    } catch {
+      // Der nächste mögliche Button wird geprüft.
+    }
+  }
+
+  console.log("Kein sichtbarer Cookie-Dialog gefunden.");
+}
+
+async function readEvents(page) {
+  const selector = ".events .event-container";
+
+  await page.waitForSelector(selector, {
+    state: "attached",
+    timeout: 30000,
+  });
+
+  return page.locator(selector).evaluateAll((cards) => {
+    const cleanText = (value) =>
+      String(value || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return cards
+      .map((card) => {
+        /*
+         * Die Paarung wird direkt aus den drei dafür vorgesehenen Elementen
+         * aufgebaut. Dadurch wird nicht mehr nur "VfB Stuttgart" erkannt.
+         */
+        const home = cleanText(
+          card.querySelector(".event-title .text-home")?.textContent
+        );
+        const delimiter =
+          cleanText(
+            card.querySelector(".event-title .text-delimiter")?.textContent
+          ) || "-";
+        const guest = cleanText(
+          card.querySelector(".event-title .text-guest")?.textContent
+        );
+
+        let title = [home, delimiter, guest].filter(Boolean).join(" ");
+
+        /*
+         * Fallback: strukturierte Event-Daten verwenden, falls sich das
+         * sichtbare HTML später leicht ändert.
+         */
+        let structuredData = null;
+
+        try {
+          const json = card.querySelector(
+            'script[type="application/ld+json"]'
+          )?.textContent;
+
+          if (json) {
+            structuredData = JSON.parse(json);
+          }
+        } catch {
+          structuredData = null;
+        }
+
+        if (!home || !guest) {
+          const structuredTitle = cleanText(structuredData?.name);
+
+          if (structuredTitle) {
+            title = structuredTitle.replace(
+              /(\S)-(?=VfB Stuttgart\b)/,
+              "$1 - "
+            );
+          }
+        }
+
+        /*
+         * Der Verkaufsstatus steht im Button der jeweiligen
+         * Veranstaltung. Hinweise wie ÖPNV werden bewusst ignoriert.
+         */
+        const status =
+          cleanText(
+            card.querySelector(".event-footer .event-button a b")?.textContent
+          ) ||
+          cleanText(
+            card.querySelector(".event-footer .event-button a")?.textContent
+          );
+
+        const relativeHref =
+          card.querySelector(".event-footer .event-button a")?.getAttribute(
+            "href"
+          ) || "";
+
+        let pageUrl = structuredData?.url || "";
+
+        if (!pageUrl && relativeHref) {
+          try {
+            pageUrl = new URL(relativeHref, window.location.href).href;
+          } catch {
+            pageUrl = window.location.href;
+          }
+        }
+
+        const eventId =
+          card
+            .querySelector(".event-footer .event-button a")
+            ?.getAttribute("data-eventid") || "";
+
+        return {
+          eventId: cleanText(eventId),
+          title: cleanText(title),
+          status: cleanText(status),
+          pageUrl: cleanText(pageUrl || window.location.href),
+        };
+      })
+      .filter(
+        (event) =>
+          event.title &&
+          event.status &&
+          event.title.includes("VfB Stuttgart")
+      );
+  });
+}
+
+async function sendEmail({ title, oldStatus, newStatus, pageUrl }) {
+  if (!EMAIL_ENDPOINT || !EMAIL_SECRET) {
+    console.warn(
+      `Keine E-Mail gesendet: EMAIL_ENDPOINT oder EMAIL_SECRET fehlt (${title}).`
+    );
+    return false;
+  }
+
+  const url = new URL(EMAIL_ENDPOINT);
+  url.searchParams.set("secret", EMAIL_SECRET);
+  url.searchParams.set("eventName", title);
+  url.searchParams.set(
+    "status",
+    `${oldStatus} -> ${newStatus}`
+  );
+  url.searchParams.set("pageUrl", pageUrl || PAGE_URL);
+
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!response.ok) {
-    throw new Error(`Mail-Endpunkt antwortete mit HTTP ${response.status}.`);
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `E-Mail-Endpunkt antwortete mit HTTP ${response.status}: ${body.slice(
+        0,
+        300
+      )}`
+    );
   }
+
+  console.log(`E-Mail gesendet: ${title}`);
+  return true;
 }
 
-const browser = await chromium.launch({ headless: true });
+function buildStateKey(event) {
+  /*
+   * Die Event-ID bleibt über Statusänderungen hinweg stabil.
+   * Falls sie fehlt, wird die Paarung als Schlüssel verwendet.
+   */
+  return event.eventId ? `event-${event.eventId}` : event.title;
+}
 
-const context = await browser.newContext({
-  locale: "de-DE",
-  timezoneId: "Europe/Berlin",
-  viewport: { width: 1440, height: 1100 },
-});
+async function main() {
+  const browser = await chromium.launch({ headless: true });
 
-const page = await context.newPage();
+  try {
+    const page = await browser.newPage({
+      locale: "de-DE",
+      viewport: { width: 1440, height: 1200 },
+    });
 
-try {
-  await openTicketPage(page);
+    console.log(`Öffne: ${PAGE_URL}`);
 
-  const events = await readEvents(page);
+    await page.goto(PAGE_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
 
-  if (events.length === 0) {
-    throw new Error("Keine Veranstaltungskarten mit Ticketstatus ausgelesen.");
-  }
+    await closeCookieDialog(page);
 
-  const previous = await loadState();
-  const next = {};
+    await page.waitForLoadState("networkidle", {
+      timeout: 15000,
+    }).catch(() => {
+      console.log(
+        "Networkidle nicht erreicht; die bereits geladene Seite wird ausgewertet."
+      );
+    });
 
-  for (const event of events) {
-    const id = clean(event.id);
-    const title = clean(event.title);
-    const status = clean(event.status);
+    const events = await readEvents(page);
 
-    console.log(`${title} -> ${status}`);
+    console.log(`${events.length} Veranstaltungskarte(n) gefunden.`);
 
-    const oldStatus = normalize(previous[id]?.status);
-    const newStatus = normalize(status);
-
-    const wasSoldOut = oldStatus.includes(SOLD_OUT_TEXT);
-    const isSoldOut = newStatus.includes(SOLD_OUT_TEXT);
-
-    if (previous[id] && wasSoldOut && !isSoldOut) {
-      await sendEmail(title, status, page.url());
-      console.log(`E-Mail ausgelöst: ${title}`);
+    if (events.length === 0) {
+      throw new Error(
+        "Keine VfB-Auswärtsveranstaltungen gefunden. state.json wird nicht verändert."
+      );
     }
 
-    next[id] = {
-      title,
-      status,
-      checkedAt: new Date().toISOString(),
-    };
+    for (const event of events) {
+      console.log(`${event.title} -> ${event.status}`);
+    }
+
+    const previousState = loadState();
+    const nextState = {};
+    const notifications = [];
+
+    for (const event of events) {
+      const key = buildStateKey(event);
+      const previous = previousState[key];
+      const oldStatus =
+        typeof previous === "string" ? previous : previous?.status || "";
+
+      nextState[key] = {
+        eventId: event.eventId,
+        title: event.title,
+        status: event.status,
+        pageUrl: event.pageUrl,
+        checkedAt: new Date().toISOString(),
+      };
+
+      /*
+       * Benachrichtigung nur beim gewünschten Übergang:
+       * vorher "Gästebereich ausverkauft", jetzt ein anderer Status.
+       *
+       * Beim allerersten Lauf wird lediglich state.json angelegt.
+       */
+      if (
+        oldStatus &&
+        isSoldOut(oldStatus) &&
+        !isSoldOut(event.status)
+      ) {
+        notifications.push({
+          title: event.title,
+          oldStatus,
+          newStatus: event.status,
+          pageUrl: event.pageUrl,
+        });
+      }
+    }
+
+    /*
+     * Erst speichern, wenn die Seite erfolgreich ausgewertet wurde.
+     * So wird ein bestehender Zustand bei einem Lade-/Parserfehler nicht
+     * versehentlich überschrieben.
+     */
+    saveState(nextState);
+    console.log("state.json aktualisiert.");
+
+    if (notifications.length === 0) {
+      console.log(
+        "Keine Änderung von „Gästebereich ausverkauft“ zu einem anderen Status."
+      );
+      return;
+    }
+
+    for (const notification of notifications) {
+      await sendEmail(notification);
+    }
+  } finally {
+    await browser.close();
   }
-
-  await saveState(next);
-} catch (error) {
-  console.error(error);
-
-  await page.screenshot({
-    path: "failure.png",
-    fullPage: true,
-  }).catch(() => {});
-
-  await fs.writeFile(
-    "failure.html",
-    await page.content().catch(() => ""),
-    "utf8"
-  ).catch(() => {});
-
-  throw error;
-} finally {
-  await browser.close();
 }
+
+main().catch((error) => {
+  console.error("Monitor fehlgeschlagen:");
+  console.error(error);
+  process.exitCode = 1;
+});
