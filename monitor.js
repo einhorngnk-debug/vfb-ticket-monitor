@@ -290,18 +290,17 @@ async function main() {
        *
        * Beim ersten Lauf wird nur state.json angelegt.
        */
-      if (
-        oldStatus &&
-        isSoldOut(oldStatus) &&
-        !isSoldOut(event.status)
-      ) {
-        notifications.push({
-          title: event.title,
-          oldStatus,
-          newStatus: event.status,
-          pageUrl: event.pageUrl,
-        });
-      }
+if (
+  oldStatus &&
+  normalizeStatus(oldStatus) !== normalizeStatus(event.status)
+) {
+  notifications.push({
+    title: event.title,
+    oldStatus,
+    newStatus: event.status,
+    pageUrl: event.pageUrl,
+  });
+}
     }
 
     saveState(nextState);
