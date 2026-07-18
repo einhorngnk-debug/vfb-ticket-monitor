@@ -1,24 +1,21 @@
-# VfB Ticket Monitor – Cookie-Fix
+# VfB Ticket Monitor – direkte Ticketseite
 
-Diese Version prüft die öffentlich sichtbaren Auswärtsspiele ohne Login.
+Der Monitor öffnet direkt die öffentliche Auswärtsspiel-Seite:
 
-Der ConsentManager-Dialog wird nacheinander über folgende Wege geschlossen:
+`https://tickets.vfb.de/shop?wes=empty_session_103&language=1&shopid=103&nextstate=2&lpShortcutId=4`
 
-1. sichtbare Playwright-Locators,
-2. alle Frames,
-3. offene Shadow DOMs,
-4. einen Koordinaten-Fallback für den mittigen roten Hauptbutton.
+Dadurch muss die Kachel „Auswärtsspiele“ nicht mehr angeklickt werden.
 
-## Benötigte Secrets
+## GitHub-Secrets
 
 - `EMAIL_ENDPOINT`
 - `EMAIL_SECRET`
 
 ## Installation
 
-Alle Dateien dieses Pakets in das GitHub-Repository hochladen und vorhandene
-Dateien ersetzen. Danach den Workflow manuell über GitHub Actions starten.
+Alle Dateien ins bestehende Repository hochladen und die vorhandenen Dateien
+ersetzen. Danach den Workflow unter GitHub Actions manuell starten.
 
-Wenn der Shop die Ticketdaten nur nach Anmeldung ausliefert, meldet der
-Workflow das ausdrücklich. CAPTCHA, Warteschlangen oder Logins werden nicht
-umgangen.
+Beim ersten erfolgreichen Lauf wird nur `state.json` befüllt. Eine E-Mail wird
+erst bei einem späteren Wechsel von „Gästebereich ausverkauft“ zu einem
+anderen Status verschickt.
