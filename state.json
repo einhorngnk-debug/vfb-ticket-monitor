@@ -1,17 +1,16 @@
 {
-  "2748": {
-    "title": "VfB Stuttgart",
+  "event-266": {
+    "eventId": "266",
+    "title": "F.C. Hansa Rostock - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
-    "checkedAt": "2026-07-18T10:23:02.866Z"
+    "pageUrl": "https://tickets.vfb.de/shops/103/events/2748",
+    "checkedAt": "2026-07-18T10:52:37.593Z"
   },
-  "2752": {
-    "title": "VfB Stuttgart",
-    "status": "Gästebereich ausverkauft!",
-    "checkedAt": "2026-07-18T10:23:02.866Z"
-  },
-  "2753": {
-    "title": "VfB Stuttgart",
+  "event-270": {
+    "eventId": "270",
+    "title": "TSG Hoffenheim - VfB Stuttgart",
     "status": "Mitglieder: ab Di., 28.7., 9 Uhr",
-    "checkedAt": "2026-07-18T10:23:02.866Z"
+    "pageUrl": "https://tickets.vfb.de/shops/103/events/2753",
+    "checkedAt": "2026-07-18T10:52:37.593Z"
   }
 }
