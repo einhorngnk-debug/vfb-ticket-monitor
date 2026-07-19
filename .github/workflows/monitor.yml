@@ -2,7 +2,7 @@ name: VfB Ticket Monitor ohne Login
 
 on:
   schedule:
-    - cron: "4,40 * * * *"
+    - cron: "5,35 7-22 * * *"
       timezone: "Europe/Berlin"
   workflow_dispatch:
   
