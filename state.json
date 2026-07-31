@@ -1,23 +1,30 @@
 {
+  "Fulham FC - VfB Stuttgart": {
+    "eventId": "264",
+    "title": "Fulham FC - VfB Stuttgart",
+    "status": "Tickets",
+    "pageUrl": "https://tickets.vfb.de/shops/103/events/2813",
+    "checkedAt": "2026-07-31T12:27:43.316Z"
+  },
   "F.C. Hansa Rostock - VfB Stuttgart": {
     "eventId": "266",
     "title": "F.C. Hansa Rostock - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
     "pageUrl": "https://tickets.vfb.de/shops/103/events/2748",
-    "checkedAt": "2026-07-30T21:46:44.351Z"
+    "checkedAt": "2026-07-31T12:27:43.316Z"
   },
   "FC Bayern München - VfB Stuttgart": {
     "eventId": "270",
     "title": "FC Bayern München - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
     "pageUrl": "https://tickets.vfb.de/shops/103/events/2752",
-    "checkedAt": "2026-07-30T21:46:44.351Z"
+    "checkedAt": "2026-07-31T12:27:43.316Z"
   },
   "TSG Hoffenheim - VfB Stuttgart": {
     "eventId": "270",
     "title": "TSG Hoffenheim - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
     "pageUrl": "https://tickets.vfb.de/shops/103/events/2753",
-    "checkedAt": "2026-07-30T21:46:44.351Z"
+    "checkedAt": "2026-07-31T12:27:43.316Z"
   }
 }
