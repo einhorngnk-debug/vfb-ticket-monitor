@@ -1,23 +1,16 @@
 {
-  "F.C. Hansa Rostock - VfB Stuttgart": {
-    "eventId": "266",
-    "title": "F.C. Hansa Rostock - VfB Stuttgart",
-    "status": "Gästebereich ausverkauft!",
-    "pageUrl": "https://tickets.vfb.de/shops/103/events/2748",
-    "checkedAt": "2026-08-21T18:40:26.706Z"
-  },
   "FC Bayern München - VfB Stuttgart": {
     "eventId": "270",
     "title": "FC Bayern München - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
     "pageUrl": "https://tickets.vfb.de/shops/103/events/2752",
-    "checkedAt": "2026-08-21T18:40:26.707Z"
+    "checkedAt": "2026-08-21T19:28:11.238Z"
   },
   "TSG Hoffenheim - VfB Stuttgart": {
     "eventId": "270",
     "title": "TSG Hoffenheim - VfB Stuttgart",
     "status": "Gästebereich ausverkauft!",
     "pageUrl": "https://tickets.vfb.de/shops/103/events/2753",
-    "checkedAt": "2026-08-21T18:40:26.707Z"
+    "checkedAt": "2026-08-21T19:28:11.238Z"
   }
 }
